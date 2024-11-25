@@ -1,5 +1,5 @@
 #include <SoftwareSerial.h>
-SoftwareSerial SIM800serial (2, 3);
+SoftwareSerial SIM800serial(2, 3);
 
 #define OK 1
 #define NOTOK 2
@@ -10,7 +10,8 @@ SoftwareSerial SIM800serial (2, 3);
 String txt;
 bool relayState = false;  // Start with relay OFF
 unsigned long lastToggleTime = 0;
-const unsigned long TOGGLE_INTERVAL = 10000; // 10 seconds
+const unsigned long TOGGLE_INTERVAL = 1000; // 1 second toggle
+bool isGprsInitialized = false;
 
 void setup() {
   pinMode(5, OUTPUT);
@@ -29,6 +30,8 @@ void setup() {
   
   if (SIM800command("AT", "OK", "ERROR", 500, 5) == OK) {
     Serial.println("SIM800L responding OK");
+    // Initialize GPRS once at startup
+    isGprsInitialized = initGPRS();
   } else {
     Serial.println("SIM800L not responding!");
   }
@@ -52,30 +55,27 @@ void loop() {
 void sendStateToServer() {
   Serial.println("\n--- Starting Relay Toggle Sequence ---");
   
-  if (!initGPRS()) {
-    Serial.println("GPRS initialization failed!");
-    return;
+  // Only initialize if not already initialized
+  if (!isGprsInitialized) {
+    isGprsInitialized = initGPRS();
+    if (!isGprsInitialized) {
+      Serial.println("GPRS initialization failed!");
+      return;
+    }
   }
 
   // Use current relay state for the request
   String toggleURL = "http://httpbin.org/get?relay=" + String(relayState ? "on" : "off");
   Serial.println("Sending request to: " + toggleURL);
   
-  SIM800command("AT+HTTPPARA=\"URL\",\"" + toggleURL + "\"", "OK", "ERROR", 20000, 1);
+  SIM800command("AT+HTTPPARA=\"URL\",\"" + toggleURL + "\"", "OK", "ERROR", 2000, 1);
   
-  if (SIM800command("AT+HTTPACTION=0", "0,200,", "ERROR", 20000, 1) == OK) {
-    SIM800command("AT+HTTPREAD", "HTTPREAD", "ERROR", 20000, 1);
-    
-    if (txt.indexOf("200") > -1) {
-      Serial.println("\n=========================");
-      Serial.println("Relay is now: " + String(relayState ? "ON" : "OFF"));
-      Serial.println("=========================\n");
-    }
+  if (SIM800command("AT+HTTPACTION=0", "0,200,", "ERROR", 2000, 1) == OK) {
+    SIM800command("AT+HTTPREAD", "HTTPREAD", "ERROR", 2000, 1);
+  } else {
+    // If HTTP action failed, reinitialize GPRS next time
+    isGprsInitialized = false;
   }
-
-  // Cleanup
-  SIM800command("AT+HTTPTERM", "HTTPTERM", "ERROR", 20000, 1);
-  SIM800command("AT+SAPBR=0,1", "+SAPBR:", "ERROR", 2000, 1);
 }
 
 bool initGPRS() {
@@ -83,22 +83,21 @@ bool initGPRS() {
   
   if (SIM800command("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"", "OK", "ERROR", 2000, 1) != OK) return false;
   if (SIM800command("AT+SAPBR=3,1,\"APN\",\"safaricom\"", "OK", "ERROR", 2000, 1) != OK) return false;
-  if (SIM800command("AT+SAPBR=1,1", "OK", "ERROR", 5000, 1) != OK) return false;
-  if (SIM800command("AT+SAPBR=2,1", "OK", "ERROR", 5000, 1) != OK) return false;
-  if (SIM800command("AT+HTTPINIT", "OK", "ERROR", 30000, 1) != OK) return false;
-  if (SIM800command("AT+HTTPPARA=\"CID\",1", "OK", "ERROR", 10000, 1) != OK) return false;
+  if (SIM800command("AT+SAPBR=1,1", "OK", "ERROR", 2000, 1) != OK) return false;
+  if (SIM800command("AT+SAPBR=2,1", "OK", "ERROR", 2000, 1) != OK) return false;
+  if (SIM800command("AT+HTTPINIT", "OK", "ERROR", 2000, 1) != OK) return false;
+  if (SIM800command("AT+HTTPPARA=\"CID\",1", "OK", "ERROR", 2000, 1) != OK) return false;
   
   Serial.println("GPRS initialized successfully");
   return true;
 }
 
-// Your existing helper functions remain the same
 byte SIM800command(String command, String response1, String response2, uint16_t timeOut, uint16_t repetitions) {
   byte returnValue = NOTOK;
   byte countt = 0;
   
   while (countt < repetitions && returnValue != OK) {
-    Serial.println("> " + command); // Print command being sent
+    Serial.println("> " + command);
     SIM800serial.println(command);
     
     if (SIM800waitFor(response1, response2, timeOut) == OK) {
@@ -112,15 +111,14 @@ byte SIM800command(String command, String response1, String response2, uint16_t 
 
 byte SIM800waitFor(String response1, String response2, uint16_t timeOut) {
   uint16_t entry = 0;
-  uint16_t count = 0;
   String reply = SIM800read();
   byte retVal = 99;
 
   do {
     reply = SIM800read();
     delay(1);
-    entry ++;
-  } while ((reply.indexOf(response1) + reply.indexOf(response2) == -2) && entry < timeOut );
+    entry++;
+  } while ((reply.indexOf(response1) + reply.indexOf(response2) == -2) && entry < timeOut);
 
   if (entry >= timeOut) {
     retVal = TIMEOUT;

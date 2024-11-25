@@ -1,20 +1,19 @@
-// Include required libraries
 #include <SoftwareSerial.h>
 
 // Pin Definitions
-const int SIM800_RX = 2;    // SIM800L RX connected to Arduino D2
-const int SIM800_TX = 3;    // SIM800L TX connected to Arduino D3
-const int RELAY_PIN = 7;    // Relay control pin connected to Arduino D7
-const int STATUS_LED = 13;  // Built-in LED for status indication
+const int SIM800_RX = 2;    
+const int SIM800_TX = 3;    
+const int RELAY_PIN = 7;    
+const int STATUS_LED = 13;  
 
 // Network Configuration
-const char* APN = "safaricom";  // Your mobile carrier's APN
+const char* APN = "safaricom";  
 const char* SERVER_URL = "https://siliconwit.github.io/relay-toggle";
 
 // Timing Configuration
 unsigned long lastCheckTime = 0;
-const unsigned long CHECK_INTERVAL = 10000;  // Check every 10 seconds
-const unsigned long TIMEOUT = 5000;          // 5 second timeout for responses
+const unsigned long CHECK_INTERVAL = 10000;  
+const unsigned long TIMEOUT = 5000;          
 
 // State Variables
 bool relayState = false;
@@ -22,6 +21,16 @@ bool networkConnected = false;
 
 // Initialize SoftwareSerial for SIM800L
 SoftwareSerial sim800l(SIM800_RX, SIM800_TX);
+
+// Function prototypes - add these at the top
+void blinkLED(int times);
+bool sendATCommand(String command, String expectedResponse = "OK", unsigned long timeout = 3000);
+String waitForResponse(String expectedResponse, unsigned long timeout);
+bool isNetworkRegistered();
+void setRelayState(bool state);
+void checkRelayState();
+void initGSM();
+void processSerialCommand(String command);
 
 void setup() {
   // Initialize pins
